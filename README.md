@@ -37,7 +37,7 @@ A simple graphical user interface for yt-dlp that makes downloading videos and a
 
 ## Usage
 
-Run the application:
+Run the application from source:
 ```bash
 python mainGUI.py
 ```
@@ -51,6 +51,52 @@ Steps:
 5. Optionally update yt-dlp from the sidebar and clear the log when needed.
 
 > ⚠️ Make sure the output folder exists and yt-dlp is installed. The app will display warnings if either check fails.
+
+### Building a Standalone Executable
+
+To distribute the GUI without requiring users to install Python, you can package it as a single executable.
+
+1. Install the build dependencies:
+   ```bash
+   pip install pyinstaller
+   ```
+2. Run the helper script (or issue the equivalent command directly):
+   ```bash
+   python build.py
+   ```
+   This will create a `dist/yt-dlp-gui.exe` file on Windows.
+
+Alternatively, invoke PyInstaller manually:
+```bash
+pyinstaller --onefile --windowed --name yt-dlp-gui mainGUI.py
+```
+
+#### Notes
+- The `--windowed` flag suppresses the console window on Windows.
+- You may want to verify that `yt-dlp` is accessible from the packaged app (either include it or instruct users to install it separately).
+- **Update button behaviour:**
+  * When running from source the button runs `python -m pip install --upgrade yt-dlp`.
+  * When running as a frozen executable the button first tries to call `python -m pip install --upgrade yt-dlp`
+    using whatever Python interpreter is on the system PATH.  Output from that
+    attempt is shown in the log.  If the external call fails, the app simply
+    notes the error – no browser redirect occurs.
+  * Updating the GUI binary itself still requires downloading a new release
+    from GitHub (see below).
+
+### Publishing Releases
+
+For GitHub releases:
+
+1. Build the executable for each target platform (Windows, macOS, Linux) using the steps above.
+2. Create a new release on GitHub and upload the generated binary (`yt-dlp-gui.exe` for Windows) as an asset.
+3. Provide release notes describing the changes.
+
+Users can then download the standalone executable without needing to clone the repo or manage dependencies.
+
+Include `requirements.txt` in the repository so others can install dependencies easily:
+```bash
+pip install -r requirements.txt
+```
 
 ## How It Works
 

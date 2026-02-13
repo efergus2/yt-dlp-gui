@@ -247,8 +247,41 @@ class YTDLP_GUI(ctk.CTk):
         self.enable_buttons()
 
     def update_ytdlp(self) -> None:
+        """Attempt to update the yt-dlp package.
+
+        * When running from source this invokes `python -m pip` using
+          the current interpreter.
+        * When running as a frozen executable, pip is not bundled.  In that
+          case we display a warning and open the project's release page so
+          users can download a fresh binary.
+        """
         self.disable_buttons()
         self.log("Checking for yt-dlp updates...")
+
+        if getattr(sys, "frozen", False):
+            # running from a PyInstaller bundle - pip isn't embedded.
+            # we still can try invoking an external python on PATH.
+            self.log("⚠ Running standalone build; attempting external update...")
+            try:
+                proc = subprocess.Popen([
+                    "python",
+                    "-m",
+                    "pip",
+                    "install",
+                    "--upgrade",
+                    "yt-dlp",
+                ], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                for raw in proc.stdout:
+                    self.log(raw.rstrip())
+                proc.wait()
+                if proc.returncode == 0:
+                    self.log("✅ yt-dlp updated via system Python.")
+                else:
+                    self.log("❌ external update failed (exit code %s)")
+            except Exception as exc:
+                self.log(f"❌ could not run external python: {exc}")
+            self.enable_buttons()
+            return
 
         try:
             with subprocess.Popen(
