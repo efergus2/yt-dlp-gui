@@ -5,7 +5,10 @@ import threading
 import os
 import re
 import sys
+from shutil import which
+from typing import List, Optional
 
+# configure appearance once
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
@@ -152,14 +155,16 @@ class YTDLP_GUI(ctk.CTk):
 
     # ================= FUNCTIONS =================
 
-    def log(self, text):
+    def log(self, text: str) -> None:
+        """Append a line of text to the log widget and scroll to bottom."""
         self.log_box.insert("end", text + "\n")
         self.log_box.see("end")
 
-    def clear_log(self):
+    def clear_log(self) -> None:
+        """Remove all text from the log."""
         self.log_box.delete("1.0", "end")
 
-    def choose_folder(self):
+    def choose_folder(self) -> None:
         folder = filedialog.askdirectory()
         if folder:
             self.output_path.set(folder)
@@ -172,52 +177,68 @@ class YTDLP_GUI(ctk.CTk):
         self.download_btn.configure(state="normal")
         self.update_btn.configure(state="normal")
 
-    def start_download(self):
-        threading.Thread(target=self.download).start()
+    def start_download(self) -> None:
+        # run download in a background thread so ui stays responsive
+        threading.Thread(target=self.download, daemon=True).start()
 
-    def download(self):
+    def _build_download_command(self, url: str, folder: str, file_type: str) -> List[str]:
+        output_template = os.path.join(folder, "%(title)s.%(ext)s")
+        cmd: List[str] = ["yt-dlp", "-o", output_template]
+
+        if file_type in ["mp3", "wav", "m4a"]:
+            cmd += ["-x", "--audio-format", file_type]
+        elif file_type == "mp4":
+            cmd += ["-f", "mp4"]
+        else:
+            cmd += ["-f", "bestvideo+bestaudio/best"]
+
+        cmd.append(url)
+        return cmd
+
+    def download(self) -> None:
         url = self.url_entry.get().strip()
-        folder = self.output_path.get()
+        folder = self.output_path.get().strip()
         file_type = self.format_var.get()
 
         if not url or not folder:
             self.log("⚠ Missing URL or output folder.")
             return
 
+        if not os.path.isdir(folder):
+            self.log("⚠ Output folder does not exist.")
+            return
+
+        if which("yt-dlp") is None:
+            self.log("⚠ yt-dlp executable not found. Is it installed?")
+            return
+
         self.disable_buttons()
         self.progress.set(0)
 
-        output_template = os.path.join(folder, "%(title)s.%(ext)s")
-        command = ["yt-dlp", "-o", output_template]
+        command = self._build_download_command(url, folder, file_type)
+        self.log(f"Running: {' '.join(command)}")
 
-        if file_type in ["mp3", "wav", "m4a"]:
-            command += ["-x", "--audio-format", file_type]
-        elif file_type == "mp4":
-            command += ["-f", "mp4"]
-        else:
-            command += ["-f", "bestvideo+bestaudio/best"]
+        try:
+            with subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1
+            ) as process:
+                for raw in process.stdout:
+                    line = raw.rstrip()
+                    self.log(line)
+                    match = re.search(r"(\d+(?:\.\d+)?)%", line)
+                    if match:
+                        self.progress.set(float(match.group(1)) / 100)
+                process.wait()
+                rc = process.returncode
+        except Exception as exc:
+            self.log(f"❌ Error running yt-dlp: {exc}")
+            rc = 1
 
-        command.append(url)
-
-        self.log("Starting download...")
-
-        process = subprocess.Popen(
-            command,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True
-        )
-
-        for line in process.stdout:
-            self.log(line.strip())
-            match = re.search(r"(\d+(\.\d+)?)%", line)
-            if match:
-                percent = float(match.group(1)) / 100
-                self.progress.set(percent)
-
-        process.wait()
-
-        if process.returncode == 0:
+        if rc == 0:
             self.progress.set(1)
             self.log("✅ Download complete.")
         else:
@@ -225,22 +246,31 @@ class YTDLP_GUI(ctk.CTk):
 
         self.enable_buttons()
 
-    def update_ytdlp(self):
+    def update_ytdlp(self) -> None:
         self.disable_buttons()
-        self.log("Checking for updates...")
+        self.log("Checking for yt-dlp updates...")
 
-        process = subprocess.Popen(
-            [sys.executable, "-m", "pip", "install", "--upgrade", "yt-dlp"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True
-        )
+        try:
+            with subprocess.Popen(
+                [sys.executable, "-m", "pip", "install", "--upgrade", "yt-dlp"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1
+            ) as process:
+                for raw in process.stdout:
+                    self.log(raw.rstrip())
+                process.wait()
+                rc = process.returncode
+        except Exception as exc:
+            self.log(f"❌ Update failed: {exc}")
+            rc = 1
 
-        for line in process.stdout:
-            self.log(line.strip())
+        if rc == 0:
+            self.log("✅ yt-dlp is up to date.")
+        else:
+            self.log("❌ yt-dlp update encountered errors.")
 
-        process.wait()
-        self.log("Update finished.")
         self.enable_buttons()
 
 
